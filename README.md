@@ -556,4 +556,6 @@ This project is proprietary to KAMDATA. All rights reserved.
 ---
 
 *Last updated: November 2025*
-*Maintained by: KAMDATA Development Team*
+*Maintained by: E-vior Developments Team*
+462 307 1972
+eviordevelopments@gmail.com
