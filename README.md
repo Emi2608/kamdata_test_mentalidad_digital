@@ -17,7 +17,7 @@ The KAMDATA Digital Mindset Test is an interactive web application designed to e
 - **Frontend**: React 18 with Vite build tool
 - **Styling**: Tailwind CSS with custom KAMDATA branding
 - **Animations**: Framer Motion for smooth interactions
-- **Backend**: Supabase for data storage and real-time features
+- **Backend**: Firebase/Firestore for unified data collection and storage
 - **UI Components**: Radix UI primitives with custom styling
 - **PDF Generation**: html2canvas + jsPDF for report export
 - **Deployment**: Google Cloud Platform (GCP)
@@ -66,9 +66,10 @@ graph TB
   - `src/components/ui/`: Reusable UI primitives (Card, Input, Select, etc.)
 
 #### Backend Integration
-- **Supabase**: PostgreSQL database with real-time subscriptions
-- **Client Configuration**: Environment-based connection setup
-- **Data Models**: User responses, test results, and analytics
+- **Firebase/Firestore**: NoSQL database for unified data collection
+- **Client Configuration**: Firebase SDK initialization with environment variables
+- **Data Models**: Structured test results collection with RLS security rules
+- **Security**: Anonymous user access for INSERT and SELECT operations
 
 #### Asset Management
 - **Local Assets**: Static files stored in `public/` directory
@@ -137,6 +138,7 @@ src/
 - **`vite.config.js`**: Build configuration with React plugin and path aliases
 - **`tailwind.config.js`**: Tailwind CSS configuration with custom colors
 - **`testConfig.js`**: Question definitions for the three mentalities assessment
+- **`firebase.js`**: Firebase client configuration and initialization
 
 #### DevOps Considerations
 - **Testing**: Component-level unit tests using Jest and React Testing Library
@@ -167,8 +169,12 @@ src/
 3. **Set up environment variables**:
    Create a `.env.local` file in the root directory:
    ```env
-   VITE_SUPABASE_URL=your-supabase-url
-   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+   VITE_FIREBASE_API_KEY=your-firebase-api-key
+   VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your-project-id
+   VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+   VITE_FIREBASE_APP_ID=your-app-id
    ```
 
 4. **Migrate assets to local**:
@@ -256,9 +262,69 @@ options:
 Set environment variables in GCP:
 ```bash
 gcloud run services update kamdata-mindset-test \
-  --set-env-vars VITE_SUPABASE_URL=your-url,VITE_SUPABASE_ANON_KEY=your-key \
+  --set-env-vars VITE_FIREBASE_API_KEY=your-key,VITE_FIREBASE_PROJECT_ID=your-project \
   --region us-central1
 ```
+
+### Firebase/Firestore Setup
+1. **Create Firebase Project**:
+   - Go to [Firebase Console](https://console.firebase.google.com/)
+   - Create a new project or select existing GCP project
+
+2. **Enable Firestore Database**:
+   - Navigate to Firestore Database in the Firebase console
+   - Create database in production mode
+   - Set up security rules for anonymous access
+
+3. **Firestore Security Rules**:
+   ```javascript
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       // Allow anonymous users to insert test results
+       match /kamdata_test_results/{document} {
+         allow create: if request.auth == null;
+         allow read: if request.auth == null;
+       }
+     }
+   }
+   ```
+
+4. **Database Schema**:
+   ```sql
+   -- Firestore Collection: kamdata_test_results
+   -- Document Structure (equivalent to SQL table):
+   {
+     id: string (auto-generated document ID),
+     nombre: string,
+     celular: string,
+     email: string,
+     empresa: string,
+     ciudad: string,
+     answers_agil: object (JSON),
+     answers_crecimiento: object (JSON),
+     answers_exponencial: object (JSON),
+     score_agil: number,
+     score_crecimiento: number,
+     score_exponencial: number,
+     overall_score: number,
+     completed_at: timestamp,
+     created_at: timestamp,
+     info_mentorias: boolean,
+     roles: object (JSON array),
+     rol_otro_texto: string,
+     fuente_test: string,
+     fuente_test_detalle_texto: string,
+     fuente_test_detalle_red_social: string,
+     terminos: boolean
+   }
+   ```
+
+### Data Migration
+Existing data from Supabase is available in CSV format:
+- **Location**: `public/kamdata_test_results_rows-2.csv`
+- **Import Process**: Use Firebase Admin SDK or console import tools
+- **Data Volume**: All test results collected since project inception
 
 ## 🔧 DevOps Principles and Best Practices
 
@@ -337,18 +403,38 @@ export const questions = {
 };
 ```
 
-#### Analytics Integration
+#### Firebase Analytics Integration
 ```javascript
-// Add analytics tracking
-import { trackEvent } from './analytics';
+// Add Firebase Analytics tracking
+import { getAnalytics, logEvent } from 'firebase/analytics';
 
 const handleAnswer = (answer) => {
-  trackEvent('question_answered', {
+  logEvent(getAnalytics(), 'question_answered', {
     questionId: currentQuestion.id,
     answer: answer.value,
     section: currentSection
   });
   // ... rest of logic
+};
+```
+
+#### Firestore Data Operations
+```javascript
+// Example of saving test results to Firestore
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from './firebase';
+
+const saveTestResults = async (results) => {
+  try {
+    const docRef = await addDoc(collection(db, 'kamdata_test_results'), {
+      ...results,
+      created_at: new Date(),
+      completed_at: new Date()
+    });
+    console.log('Test results saved with ID:', docRef.id);
+  } catch (error) {
+    console.error('Error saving test results:', error);
+  }
 };
 ```
 
@@ -372,7 +458,98 @@ For questions or support:
 - **Email**: contacto@kamdata.com.mx
 - **Website**: [kamdata.com.mx](https://kamdata.com.mx)
 
-## 📄 License
+## 📊 Database Schema & Data Management
+
+### Firestore Collection Structure
+
+```mermaid
+graph TD
+    A[kamdata_test_results Collection] --> B[Document ID: Auto-generated UUID]
+    B --> C[User Information]
+    B --> D[Test Answers]
+    B --> E[Test Scores]
+    B --> F[Metadata]
+
+    C --> C1[nombre: string]
+    C --> C2[celular: string]
+    C --> C3[email: string]
+    C --> C4[empresa: string]
+    C --> C5[ciudad: string]
+    C --> C6[roles: object - JSON array]
+    C --> C7[rol_otro_texto: string]
+
+    D --> D1[answers_agil: object - JSON]
+    D --> D2[answers_crecimiento: object - JSON]
+    D --> D3[answers_exponencial: object - JSON]
+
+    E --> E1[score_agil: number]
+    E --> E2[score_crecimiento: number]
+    E --> E3[score_exponencial: number]
+    E --> E4[overall_score: number]
+
+    F --> F1[created_at: timestamp]
+    F --> F2[completed_at: timestamp]
+    F --> F3[info_mentorias: boolean]
+    F --> F4[fuente_test: string]
+    F --> F5[fuente_test_detalle_texto: string]
+    F --> F6[fuente_test_detalle_red_social: string]
+    F --> F7[terminos: boolean]
+```
+
+### SQL Schema Reference (for migration purposes)
+
+```sql
+-- Original Supabase PostgreSQL schema (for reference)
+CREATE TABLE public.kamdata_test_results (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  nombre text NULL,
+  celular text NULL,
+  email text NULL,
+  empresa text NULL,
+  ciudad text NULL,
+  answers_agil jsonb NULL,
+  answers_crecimiento jsonb NULL,
+  answers_exponencial jsonb NULL,
+  score_agil integer NULL,
+  score_crecimiento integer NULL,
+  score_exponencial integer NULL,
+  overall_score integer NULL,
+  completed_at timestamp with time zone NULL DEFAULT now(),
+  created_at timestamp with time zone NULL DEFAULT now(),
+  info_mentorias boolean NULL DEFAULT false,
+  roles jsonb NULL,
+  rol_otro_texto text NULL,
+  fuente_test text NULL,
+  fuente_test_detalle_texto text NULL,
+  fuente_test_detalle_red_social text NULL,
+  terminos boolean NULL,
+  CONSTRAINT kamdata_test_results_pkey PRIMARY KEY (id)
+) TABLESPACE pg_default;
+```
+
+### Data Export & Migration
+
+- **CSV Export Location**: `public/kamdata_test_results_rows-2.csv`
+- **Data Volume**: All test results collected since project inception
+- **Migration Tools**: Firebase Admin SDK or console import utilities
+- **Data Integrity**: Maintains all user responses and calculated scores
+
+### Security Rules (Firestore)
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow anonymous users to insert test results
+    match /kamdata_test_results/{document} {
+      allow create: if request.auth == null;
+      allow read: if request.auth == null;
+    }
+  }
+}
+```
+
+## � License
 
 This project is proprietary to KAMDATA. All rights reserved.
 
